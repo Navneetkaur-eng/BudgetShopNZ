@@ -4,7 +4,7 @@ import { optimiseGroceries, checkNutrition } from './api';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home');
-
+  const [optimisationResult, setOptimisationResult] = useState(null);
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navbar */}
@@ -190,7 +190,7 @@ function HomePage({ setCurrentPage }) {
 // ═══════════════════════════
 // SHOP PAGE
 // ═══════════════════════════
-function ShopPage({ setCurrentPage }) {
+function ShopPage({ setCurrentPage, setOptimisationResult }) {
   const [items, setItems] = useState([
     { id: 1, name: "Anchor Full Cream Milk 2L", qty: 2, icon: "🥛" },
     { id: 2, name: "Vogel's Mixed Grain Bread 700g", qty: 1, icon: "🍞" },
@@ -357,7 +357,7 @@ function ShopPage({ setCurrentPage }) {
 // ═══════════════════════════
 // RESULTS PAGE
 // ═══════════════════════════
-function ResultsPage({ setCurrentPage }) {
+function ResultsPage({ setCurrentPage, optimisationResult }) {
   return (
     <div className="max-w-5xl mx-auto px-6 py-6 grid grid-cols-3 gap-6">
       {/* Main Results */}
