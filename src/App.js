@@ -95,9 +95,10 @@ function App() {
     }
   }, []);
 
-  const handleLogin = (userData) => {
-    setUser(userData);
-    localStorage.setItem('budgetshop_user', JSON.stringify(userData));
+  const handleLogin = (userData, isFirstTime = false) => {
+    const userWithFlag = { ...userData, isFirstTime };
+    setUser(userWithFlag);
+    localStorage.setItem('budgetshop_user', JSON.stringify(userWithFlag));
     setCurrentPage('home');
   };
 
@@ -203,14 +204,18 @@ function LoginPage({ onLogin }) {
     if (isRegister) {
       const existing = users.find(u => u.email === email);
       if (existing) { setError('Email already registered! Please login.'); return; }
-      const newUser = { name, email, city, budget, joinDate: new Date().toLocaleDateString('en-NZ') };
+      const newUser = { 
+        name, email, city, budget, 
+        joinDate: new Date().toLocaleDateString('en-NZ'),
+        isFirstTime: true
+      };
       users.push(newUser);
       localStorage.setItem('budgetshop_users', JSON.stringify(users));
-      onLogin(newUser);
+      onLogin(newUser, true); // true = first time
     } else {
       const user = users.find(u => u.email === email);
       if (!user) { setError('Email not found! Please register first.'); return; }
-      onLogin(user);
+      onLogin(user, false); // false = returning user
     }
   };
 
@@ -296,7 +301,7 @@ function HomePage({ setCurrentPage, user }) {
             <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
               {user.name.charAt(0).toUpperCase()}
             </div>
-            Welcome back, {user.name.split(' ')[0]}! 👋
+            {user.isFirstTime ? `Welcome, ${user.name.split(' ')[0]}! 🎉` : `Welcome back, ${user.name.split(' ')[0]}! 👋`}
           </div>
         )}
         <h1 className="text-2xl md:text-4xl font-bold text-green-900 mt-2 mb-3">
@@ -388,7 +393,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
 
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`https://budgetshopnz-backend-production.up.railway.app/api/search?q=${encodeURIComponent(newItem)}`);
+        const res = await fetch(`http://127.0.0.1:5000/api/search?q=${encodeURIComponent(newItem)}`);
         const data = await res.json();
         const results = data.results.filter(s => !items.find(i => i.name === s));
 
@@ -440,7 +445,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
     setLoading(true);
     try {
       const itemNames = items.flatMap(item => Array(item.qty).fill(item.name));
-      const response = await fetch('https://budgetshopnz-backend-production.up.railway.app/api/optimise', {
+      const response = await fetch('http://127.0.0.1:5000/api/optimise', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: itemNames, budget, dietary })
@@ -813,7 +818,7 @@ function ReportPage({ setCurrentPage, optimisationResult }) {
 
   const handleDownloadPDF = async () => {
     try {
-      const response = await fetch('https://budgetshopnz-backend-production.up.railway.app/api/report', {
+      const response = await fetch('http://127.0.0.1:5000/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ optimised_plan: plan, total_cost: totalCost, savings, budget: 150, nutrition })
