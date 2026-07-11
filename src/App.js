@@ -92,6 +92,17 @@ function saveToHistory(email, itemName) {
   saveUserData(email, { history: filtered.slice(0, 20) });
 }
 
+function getSavedPlans(email) {
+  const data = getUserData(email);
+  return data.savedPlans || [];
+}
+
+function savePlan(email, plan) {
+  const plans = getSavedPlans(email);
+  plans.unshift({ ...plan, savedAt: new Date().toLocaleDateString('en-NZ') });
+  saveUserData(email, { savedPlans: plans.slice(0, 10) });
+}
+
 // ═══════════════════════════
 // APP
 // ═══════════════════════════
@@ -105,9 +116,9 @@ function App() {
     const savedEmail = localStorage.getItem('budgetshop_active_user');
     if (savedEmail) {
       const users = JSON.parse(localStorage.getItem('budgetshop_users') || '[]');
-      const user = users.find(u => u.email === savedEmail);
-      if (user) {
-        setUser(user);
+      const foundUser = users.find(u => u.email === savedEmail);
+      if (foundUser) {
+        setUser({ ...foundUser, isFirstTime: false });
         setCurrentPage('home');
       }
     }
@@ -116,14 +127,12 @@ function App() {
   const handleLogin = (userData, isFirstTime = false) => {
     const userWithFlag = { ...userData, isFirstTime };
     setUser(userWithFlag);
-    // Save active session — only email
     localStorage.setItem('budgetshop_active_user', userData.email);
     setCurrentPage('home');
   };
 
   const handleLogout = () => {
     setUser(null);
-    // Only remove session — not user data
     localStorage.removeItem('budgetshop_active_user');
     setCurrentPage('login');
     setMenuOpen(false);
@@ -137,31 +146,44 @@ function App() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-green-800 text-white px-4 md:px-6 py-4">
         <div className="flex justify-between items-center max-w-6xl mx-auto">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentPage('home')}>
             <span className="text-xl md:text-2xl">🛒</span>
             <span className="text-base md:text-xl font-semibold">BudgetShop NZ</span>
           </div>
+
+          {/* Desktop Menu */}
           <div className="hidden md:flex gap-6">
-            {['home','shop','results','report'].map(page => (
+            {[
+              { page: 'home', label: 'Home' },
+              { page: 'shop', label: 'My Shop' },
+              { page: 'results', label: 'Results' },
+              { page: 'report', label: 'Report' },
+              { page: 'history', label: 'History' },
+            ].map(({ page, label }) => (
               <button key={page} onClick={() => setCurrentPage(page)}
-                className={`text-sm capitalize ${currentPage === page ? 'text-white font-bold' : 'text-green-300 hover:text-white'}`}>
-                {page === 'shop' ? 'My Shop' : page.charAt(0).toUpperCase() + page.slice(1)}
+                className={`text-sm ${currentPage === page ? 'text-white font-bold' : 'text-green-300 hover:text-white'}`}>
+                {label}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2">
             {user && (
               <div className="hidden md:flex items-center gap-2">
-                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-sm font-bold">
+                <button onClick={() => setCurrentPage('profile')}
+                  className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-sm font-bold hover:bg-green-400">
                   {user.name.charAt(0).toUpperCase()}
-                </div>
+                </button>
                 <span className="text-sm text-green-200">Hi, {user.name.split(' ')[0]}!</span>
+                <button onClick={() => setCurrentPage('profile')} className="text-xs text-green-300 hover:text-white border border-green-600 px-2 py-1 rounded-lg">Profile</button>
                 <button onClick={handleLogout} className="text-xs text-green-300 hover:text-white border border-green-600 px-2 py-1 rounded-lg">Logout</button>
               </div>
             )}
             <button onClick={() => setMenuOpen(!menuOpen)} className="md:hidden text-white text-2xl">☰</button>
           </div>
         </div>
+
+        {/* Mobile Menu */}
         {menuOpen && (
           <div className="md:hidden mt-3 pb-2 border-t border-green-700">
             {user && (
@@ -180,6 +202,8 @@ function App() {
               { page: 'shop', label: '🛒 My Shop' },
               { page: 'results', label: '📊 Results' },
               { page: 'report', label: '📄 Report' },
+              { page: 'history', label: '📋 History' },
+              { page: 'profile', label: '👤 Profile' },
             ].map(({ page, label }) => (
               <button key={page} onClick={() => { setCurrentPage(page); setMenuOpen(false); }}
                 className={`block w-full text-left px-4 py-2 text-sm ${currentPage === page ? 'text-white font-bold' : 'text-green-300'}`}>
@@ -193,8 +217,10 @@ function App() {
 
       {currentPage === 'home' && <HomePage setCurrentPage={setCurrentPage} user={user} />}
       {currentPage === 'shop' && <ShopPage setCurrentPage={setCurrentPage} setOptimisationResult={setOptimisationResult} user={user} />}
-      {currentPage === 'results' && <ResultsPage setCurrentPage={setCurrentPage} optimisationResult={optimisationResult} />}
+      {currentPage === 'results' && <ResultsPage setCurrentPage={setCurrentPage} optimisationResult={optimisationResult} user={user} />}
       {currentPage === 'report' && <ReportPage setCurrentPage={setCurrentPage} optimisationResult={optimisationResult} />}
+      {currentPage === 'profile' && <ProfilePage setCurrentPage={setCurrentPage} user={user} setUser={setUser} />}
+      {currentPage === 'history' && <HistoryPage setCurrentPage={setCurrentPage} user={user} setOptimisationResult={setOptimisationResult} />}
     </div>
   );
 }
@@ -220,19 +246,15 @@ function LoginPage({ onLogin }) {
     if (isRegister) {
       const existing = users.find(u => u.email === email);
       if (existing) { setError('Email already registered! Please login.'); return; }
-      const newUser = {
-        name, email,
-        joinDate: new Date().toLocaleDateString('en-NZ'),
-      };
+      const newUser = { name, email, joinDate: new Date().toLocaleDateString('en-NZ') };
       users.push(newUser);
       localStorage.setItem('budgetshop_users', JSON.stringify(users));
-      // Save city and budget in per-user data
-      saveUserData(email, { city, budget });
+      saveUserData(email, { city, budget, dietary: 'No preference' });
       onLogin(newUser, true);
     } else {
-      const user = users.find(u => u.email === email);
-      if (!user) { setError('Email not found! Please register first.'); return; }
-      onLogin(user, false);
+      const foundUser = users.find(u => u.email === email);
+      if (!foundUser) { setError('Email not found! Please register first.'); return; }
+      onLogin(foundUser, false);
     }
   };
 
@@ -244,6 +266,7 @@ function LoginPage({ onLogin }) {
           <h1 className="text-3xl font-bold text-green-900">BudgetShop NZ</h1>
           <p className="text-green-600 mt-1">AI-Powered Grocery Budget Optimiser</p>
         </div>
+
         <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100">
           <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">
             {isRegister ? '📝 Create Account' : '👋 Login'}
@@ -321,15 +344,14 @@ function HomePage({ setCurrentPage, user }) {
             </div>
             {user.isFirstTime
               ? `Welcome, ${user.name.split(' ')[0]}! 🎉`
-              : `Welcome back, ${user.name.split(' ')[0]}! 👋`
-            }
+              : `Welcome back, ${user.name.split(' ')[0]}! 👋`}
           </div>
         )}
         <h1 className="text-2xl md:text-4xl font-bold text-green-900 mt-2 mb-3">
           Save more on groceries<br />
           <span className="text-green-500">across all NZ supermarkets</span>
         </h1>
-        <p className="text-green-700 mb-6 text-sm md:text-lg px-4">
+        <p className="text-green-700 mb-4 text-sm md:text-lg px-4">
           Enter your list and budget — we find the cheapest plan across Pak'nSave, New World and Woolworths NZ
         </p>
         {user && userData.city && (
@@ -384,9 +406,7 @@ function HomePage({ setCurrentPage, user }) {
 // SHOP PAGE
 // ═══════════════════════════
 function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
-  // Load per-user data
   const userData = user ? getUserData(user.email) : {};
-
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState('');
   const [budget, setBudget] = useState(userData.budget || '150');
@@ -397,25 +417,21 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
   const [filtered, setFiltered] = useState([]);
   const [userHistory, setUserHistory] = useState(user ? getUserHistory(user.email) : []);
 
-  // Save budget when changed
   const handleBudgetChange = (val) => {
     setBudget(val);
     if (user?.email) saveUserData(user.email, { budget: val });
   };
 
-  // Save city when changed
   const handleCityChange = (val) => {
     setCity(val);
     if (user?.email) saveUserData(user.email, { city: val });
   };
 
-  // Save dietary when changed
   const handleDietaryChange = (val) => {
     setDietary(val);
     if (user?.email) saveUserData(user.email, { dietary: val });
   };
 
-  // Search from backend
   useEffect(() => {
     if (newItem.length < 1) {
       const history = user?.email ? getUserHistory(user.email) : [];
@@ -476,6 +492,16 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
         body: JSON.stringify({ items: itemNames, budget, dietary })
       });
       const result = await response.json();
+      // Save plan to history
+      if (user?.email) {
+        savePlan(user.email, {
+          total_cost: result.total_cost,
+          savings: result.savings,
+          items: items.map(i => i.name),
+          budget,
+          city,
+        });
+      }
       setOptimisationResult(result);
       setCurrentPage('results');
     } catch (error) {
@@ -496,7 +522,6 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="md:col-span-2">
-          {/* Search */}
           <div className="relative mb-4">
             <div className="flex gap-2 md:gap-3">
               <input
@@ -510,7 +535,6 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
               />
               <button onClick={() => addItem()} className="bg-green-100 text-green-700 border border-green-300 px-3 md:px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap">+ Add</button>
             </div>
-
             {showSuggestions && filtered.length > 0 && (
               <div className="absolute z-20 w-full bg-white border border-gray-200 rounded-xl shadow-lg mt-1 overflow-hidden max-h-64 overflow-y-auto">
                 {newItem.length === 0 && userHistory.length > 0 && (
@@ -531,7 +555,6 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
             )}
           </div>
 
-          {/* Items List */}
           {items.length === 0 ? (
             <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 md:p-8 text-center text-gray-400 mb-4">
               <div className="text-3xl md:text-4xl mb-2">🛒</div>
@@ -555,24 +578,17 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
             </div>
           )}
 
-          {/* Budget & City — per user saved */}
           <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4">
             <div>
               <label className="text-xs md:text-sm font-medium text-gray-700 mb-1 block">Weekly budget ($NZD) *</label>
-              <input
-                value={budget}
-                onChange={e => handleBudgetChange(e.target.value)}
+              <input value={budget} onChange={e => handleBudgetChange(e.target.value)}
                 className="w-full border border-gray-300 rounded-xl px-3 md:px-4 py-2 text-sm outline-none focus:border-green-400"
-                placeholder="e.g. 150"
-              />
+                placeholder="e.g. 150" />
             </div>
             <div>
               <label className="text-xs md:text-sm font-medium text-gray-700 mb-1 block">Your city</label>
-              <select
-                value={city}
-                onChange={e => handleCityChange(e.target.value)}
-                className="w-full border border-gray-300 rounded-xl px-3 md:px-4 py-2 text-sm outline-none focus:border-green-400"
-              >
+              <select value={city} onChange={e => handleCityChange(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl px-3 md:px-4 py-2 text-sm outline-none focus:border-green-400">
                 {['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Dunedin','Napier','Palmerston North','Nelson','Rotorua'].map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
@@ -580,7 +596,6 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
             </div>
           </div>
 
-          {/* Dietary */}
           <div className="mb-4 md:mb-6">
             <label className="text-xs md:text-sm font-medium text-gray-700 mb-2 block">Dietary preferences</label>
             <div className="flex gap-1 md:gap-2 flex-wrap">
@@ -674,7 +689,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
 // ═══════════════════════════
 // RESULTS PAGE
 // ═══════════════════════════
-function ResultsPage({ setCurrentPage, optimisationResult }) {
+function ResultsPage({ setCurrentPage, optimisationResult, user }) {
   const plan = optimisationResult?.optimised_plan || {};
   const totalCost = optimisationResult?.total_cost || 0;
   const savings = optimisationResult?.savings || 0;
@@ -756,7 +771,7 @@ function ResultsPage({ setCurrentPage, optimisationResult }) {
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-semibold text-gray-800 text-sm">🌿 Nutrition summary</h3>
             <button onClick={() => setShowNutrition(!showNutrition)} className="text-xs text-green-600 hover:underline">
-              {showNutrition ? 'Hide details' : 'Per item'}
+              {showNutrition ? 'Hide' : 'Per item'}
             </button>
           </div>
           {[
@@ -786,9 +801,9 @@ function ResultsPage({ setCurrentPage, optimisationResult }) {
               {Object.entries(optimisationResult.item_nutrition).map(([itemName, nutr], i) => (
                 <div key={i} className="mb-2 p-2 bg-gray-50 rounded-lg">
                   <div className="text-xs font-medium text-gray-700 truncate">{getIcon(itemName)} {itemName}</div>
-                  <div className="flex gap-2 mt-1 flex-wrap">
+                  <div className="flex gap-2 mt-1">
                     <span className="text-xs text-gray-500">{Math.round(nutr.calories)} cal</span>
-                    <span className="text-xs text-gray-500">{Math.round(nutr.protein)}g protein</span>
+                    <span className="text-xs text-gray-500">{Math.round(nutr.protein)}g pro</span>
                     <span className="text-xs text-gray-500">{Math.round(nutr.fibre)}g fibre</span>
                   </div>
                 </div>
@@ -934,6 +949,181 @@ function ReportPage({ setCurrentPage, optimisationResult }) {
         <button onClick={() => setCurrentPage('shop')} className="flex-1 border border-green-300 text-green-700 py-2 md:py-3 rounded-xl text-xs md:text-sm font-medium">🔄 New plan</button>
         <button onClick={() => setCurrentPage('home')} className="flex-1 bg-green-700 text-white py-2 md:py-3 rounded-xl text-xs md:text-sm font-medium">🏠 Home</button>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════
+// PROFILE PAGE — NEW!
+// ═══════════════════════════
+function ProfilePage({ setCurrentPage, user, setUser }) {
+  const userData = getUserData(user.email);
+  const [name, setName] = useState(user.name);
+  const [city, setCity] = useState(userData.city || 'Auckland');
+  const [budget, setBudget] = useState(userData.budget || '150');
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    saveUserData(user.email, { city, budget });
+    const users = JSON.parse(localStorage.getItem('budgetshop_users') || '[]');
+    const updated = users.map(u => u.email === user.email ? { ...u, name } : u);
+    localStorage.setItem('budgetshop_users', JSON.stringify(updated));
+    setUser({ ...user, name });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {/* Header */}
+        <div className="bg-green-800 px-6 py-8 text-center">
+          <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto mb-3">
+            {user.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="text-white text-xl font-semibold">{user.name}</div>
+          <div className="text-green-300 text-sm">{user.email}</div>
+          <div className="text-green-400 text-xs mt-1">Member since {user.joinDate}</div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-0 border-b border-gray-100">
+          {[
+            { value: getUserHistory(user.email).length, label: 'Items searched' },
+            { value: getSavedPlans(user.email).length, label: 'Plans saved' },
+            { value: `$${userData.budget || 150}`, label: 'Weekly budget' },
+          ].map((stat, i) => (
+            <div key={i} className="text-center py-4 border-r border-gray-100 last:border-0">
+              <div className="text-xl font-bold text-green-700">{stat.value}</div>
+              <div className="text-xs text-gray-500">{stat.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Form */}
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Edit Profile</h3>
+
+          <div className="mb-4">
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Full Name</label>
+            <input value={name} onChange={e => setName(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-400" />
+          </div>
+
+          <div className="mb-4">
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Email (cannot change)</label>
+            <input value={user.email} disabled
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50 text-gray-400 cursor-not-allowed" />
+          </div>
+
+          <div className="mb-4">
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Your City</label>
+            <select value={city} onChange={e => setCity(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-400">
+              {['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Dunedin','Napier','Palmerston North','Nelson','Rotorua'].map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-6">
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Weekly Budget ($NZD)</label>
+            <input value={budget} onChange={e => setBudget(e.target.value)} type="number"
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-400" />
+          </div>
+
+          {saved && (
+            <div className="bg-green-50 text-green-700 text-sm px-4 py-2 rounded-lg mb-4 text-center">
+              ✅ Profile saved successfully!
+            </div>
+          )}
+
+          <button onClick={handleSave}
+            className="w-full bg-green-700 text-white py-3 rounded-xl font-medium text-sm hover:bg-green-800 mb-3">
+            💾 Save Changes
+          </button>
+
+          <button onClick={() => setCurrentPage('home')}
+            className="w-full border border-gray-300 text-gray-600 py-3 rounded-xl font-medium text-sm hover:bg-gray-50">
+            ← Back to Home
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════
+// HISTORY PAGE — NEW!
+// ═══════════════════════════
+function HistoryPage({ setCurrentPage, user, setOptimisationResult }) {
+  const plans = user ? getSavedPlans(user.email) : [];
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-6">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Shopping History</h2>
+          <p className="text-xs text-gray-500 mt-1">Your previous shopping plans</p>
+        </div>
+        <button onClick={() => setCurrentPage('shop')} className="bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-medium">
+          + New Plan
+        </button>
+      </div>
+
+      {plans.length === 0 ? (
+        <div className="border-2 border-dashed border-gray-200 rounded-xl p-12 text-center text-gray-400">
+          <div className="text-4xl mb-3">📋</div>
+          <div className="text-sm font-medium">No shopping history yet</div>
+          <div className="text-xs mt-1">Your plans will appear here after optimisation</div>
+          <button onClick={() => setCurrentPage('shop')} className="mt-4 bg-green-700 text-white px-6 py-2 rounded-xl text-sm">
+            Build first plan
+          </button>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {plans.map((plan, i) => (
+            <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 hover:border-green-300 transition-colors">
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <div className="font-medium text-gray-800 text-sm">{plan.savedAt}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{plan.city} · Budget: ${plan.budget}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-bold text-green-700">${plan.total_cost?.toFixed(2)}</div>
+                  <div className="text-xs text-green-600">${plan.savings?.toFixed(2)} saved</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1 mb-3">
+                {plan.items?.slice(0, 5).map((item, j) => (
+                  <span key={j} className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
+                    {getIcon(item)} {item.split(' ')[0]}
+                  </span>
+                ))}
+                {plan.items?.length > 5 && (
+                  <span className="text-xs text-gray-400">+{plan.items.length - 5} more</span>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
+                  <div className="text-xs text-gray-500">Total cost</div>
+                  <div className="font-bold text-green-700 text-sm">${plan.total_cost?.toFixed(2)}</div>
+                </div>
+                <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
+                  <div className="text-xs text-gray-500">Saved</div>
+                  <div className="font-bold text-green-700 text-sm">${plan.savings?.toFixed(2)}</div>
+                </div>
+                <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
+                  <div className="text-xs text-gray-500">Items</div>
+                  <div className="font-bold text-green-700 text-sm">{plan.items?.length}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
