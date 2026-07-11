@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 
+const API_URL = 'https://budgetshopnz-backend-production.up.railway.app';
+
 const ALL_ITEMS = [
   "Anchor Full Cream Milk 2L","Anchor Trim Milk 2L","Anchor Blue Milk 1L",
   "Pam's Full Cream Milk 2L","Lewis Road Creamery Milk 1L",
@@ -65,22 +67,34 @@ function getIcon(name) {
   return "🛒";
 }
 
-// Save user history to localStorage
+// ═══════════════════════════
+// PER-USER DATA FUNCTIONS
+// ═══════════════════════════
+function getUserData(email) {
+  return JSON.parse(localStorage.getItem(`budgetshop_data_${email}`) || '{}');
+}
+
+function saveUserData(email, data) {
+  const existing = getUserData(email);
+  localStorage.setItem(`budgetshop_data_${email}`, JSON.stringify({ ...existing, ...data }));
+}
+
 function getUserHistory(email) {
-  const key = `budgetshop_history_${email}`;
-  return JSON.parse(localStorage.getItem(key) || '[]');
+  const data = getUserData(email);
+  return data.history || [];
 }
 
 function saveToHistory(email, itemName) {
-  const key = `budgetshop_history_${email}`;
-  const history = getUserHistory(email);
-  if (!history.includes(itemName)) {
-    history.unshift(itemName);
-    if (history.length > 20) history.pop(); // Keep last 20 items
-    localStorage.setItem(key, JSON.stringify(history));
-  }
+  const data = getUserData(email);
+  const history = data.history || [];
+  const filtered = history.filter(h => h !== itemName);
+  filtered.unshift(itemName);
+  saveUserData(email, { history: filtered.slice(0, 20) });
 }
 
+// ═══════════════════════════
+// APP
+// ═══════════════════════════
 function App() {
   const [currentPage, setCurrentPage] = useState('login');
   const [optimisationResult, setOptimisationResult] = useState(null);
@@ -88,23 +102,29 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('budgetshop_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-      setCurrentPage('home');
+    const savedEmail = localStorage.getItem('budgetshop_active_user');
+    if (savedEmail) {
+      const users = JSON.parse(localStorage.getItem('budgetshop_users') || '[]');
+      const user = users.find(u => u.email === savedEmail);
+      if (user) {
+        setUser(user);
+        setCurrentPage('home');
+      }
     }
   }, []);
 
   const handleLogin = (userData, isFirstTime = false) => {
     const userWithFlag = { ...userData, isFirstTime };
     setUser(userWithFlag);
-    localStorage.setItem('budgetshop_user', JSON.stringify(userWithFlag));
+    // Save active session — only email
+    localStorage.setItem('budgetshop_active_user', userData.email);
     setCurrentPage('home');
   };
 
   const handleLogout = () => {
     setUser(null);
-    localStorage.removeItem('budgetshop_user');
+    // Only remove session — not user data
+    localStorage.removeItem('budgetshop_active_user');
     setCurrentPage('login');
     setMenuOpen(false);
   };
@@ -121,8 +141,6 @@ function App() {
             <span className="text-xl md:text-2xl">🛒</span>
             <span className="text-base md:text-xl font-semibold">BudgetShop NZ</span>
           </div>
-
-          {/* Desktop Menu */}
           <div className="hidden md:flex gap-6">
             {['home','shop','results','report'].map(page => (
               <button key={page} onClick={() => setCurrentPage(page)}
@@ -131,7 +149,6 @@ function App() {
               </button>
             ))}
           </div>
-
           <div className="flex items-center gap-3">
             {user && (
               <div className="hidden md:flex items-center gap-2">
@@ -145,7 +162,6 @@ function App() {
             <button onClick={() => setMenuOpen(!menuOpen)} className="md:hidden text-white text-2xl">☰</button>
           </div>
         </div>
-
         {menuOpen && (
           <div className="md:hidden mt-3 pb-2 border-t border-green-700">
             {user && (
@@ -204,18 +220,19 @@ function LoginPage({ onLogin }) {
     if (isRegister) {
       const existing = users.find(u => u.email === email);
       if (existing) { setError('Email already registered! Please login.'); return; }
-      const newUser = { 
-        name, email, city, budget, 
+      const newUser = {
+        name, email,
         joinDate: new Date().toLocaleDateString('en-NZ'),
-        isFirstTime: true
       };
       users.push(newUser);
       localStorage.setItem('budgetshop_users', JSON.stringify(users));
-      onLogin(newUser, true); // true = first time
+      // Save city and budget in per-user data
+      saveUserData(email, { city, budget });
+      onLogin(newUser, true);
     } else {
       const user = users.find(u => u.email === email);
       if (!user) { setError('Email not found! Please register first.'); return; }
-      onLogin(user, false); // false = returning user
+      onLogin(user, false);
     }
   };
 
@@ -227,10 +244,9 @@ function LoginPage({ onLogin }) {
           <h1 className="text-3xl font-bold text-green-900">BudgetShop NZ</h1>
           <p className="text-green-600 mt-1">AI-Powered Grocery Budget Optimiser</p>
         </div>
-
         <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100">
           <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">
-            {isRegister ? '📝 Create Account' : '👋 Welcome Back'}
+            {isRegister ? '📝 Create Account' : '👋 Login'}
           </h2>
 
           {isRegister && (
@@ -252,7 +268,7 @@ function LoginPage({ onLogin }) {
           {isRegister && (
             <>
               <div className="mb-4">
-                <label className="text-sm font-medium text-gray-700 mb-1 block">Your City</label>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Your City *</label>
                 <select value={city} onChange={e => setCity(e.target.value)}
                   className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-400">
                   {['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Dunedin','Napier','Palmerston North','Nelson','Rotorua'].map(c => (
@@ -261,7 +277,7 @@ function LoginPage({ onLogin }) {
                 </select>
               </div>
               <div className="mb-4">
-                <label className="text-sm font-medium text-gray-700 mb-1 block">Weekly Grocery Budget ($NZD)</label>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Weekly Grocery Budget ($NZD) *</label>
                 <input value={budget} onChange={e => setBudget(e.target.value)} type="number"
                   className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-400"
                   placeholder="e.g. 150" />
@@ -293,6 +309,8 @@ function LoginPage({ onLogin }) {
 // HOME PAGE
 // ═══════════════════════════
 function HomePage({ setCurrentPage, user }) {
+  const userData = user ? getUserData(user.email) : {};
+
   return (
     <div>
       <div className="bg-gradient-to-br from-green-50 to-white py-10 md:py-16 px-4 md:px-8 text-center">
@@ -301,7 +319,10 @@ function HomePage({ setCurrentPage, user }) {
             <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
               {user.name.charAt(0).toUpperCase()}
             </div>
-            {user.isFirstTime ? `Welcome, ${user.name.split(' ')[0]}! 🎉` : `Welcome back, ${user.name.split(' ')[0]}! 👋`}
+            {user.isFirstTime
+              ? `Welcome, ${user.name.split(' ')[0]}! 🎉`
+              : `Welcome back, ${user.name.split(' ')[0]}! 👋`
+            }
           </div>
         )}
         <h1 className="text-2xl md:text-4xl font-bold text-green-900 mt-2 mb-3">
@@ -311,6 +332,9 @@ function HomePage({ setCurrentPage, user }) {
         <p className="text-green-700 mb-6 text-sm md:text-lg px-4">
           Enter your list and budget — we find the cheapest plan across Pak'nSave, New World and Woolworths NZ
         </p>
+        {user && userData.city && (
+          <p className="text-green-600 text-sm mb-4">📍 {userData.city} · Budget: ${userData.budget}/week</p>
+        )}
         <button onClick={() => setCurrentPage('shop')}
           className="bg-green-700 text-white px-8 py-3 rounded-xl font-medium text-base hover:bg-green-800">
           🛒 Build My Shopping Plan
@@ -360,54 +384,58 @@ function HomePage({ setCurrentPage, user }) {
 // SHOP PAGE
 // ═══════════════════════════
 function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
+  // Load per-user data
+  const userData = user ? getUserData(user.email) : {};
+
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState('');
-  const [budget, setBudget] = useState(user?.budget || '150');
-  const [city, setCity] = useState(user?.city || 'Auckland');
+  const [budget, setBudget] = useState(userData.budget || '150');
+  const [city, setCity] = useState(userData.city || 'Auckland');
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [dietary, setDietary] = useState('No preference');
+  const [dietary, setDietary] = useState(userData.dietary || 'No preference');
   const [filtered, setFiltered] = useState([]);
-  const [userHistory, setUserHistory] = useState([]);
+  const [userHistory, setUserHistory] = useState(user ? getUserHistory(user.email) : []);
 
-  // Load user history on mount
-  useEffect(() => {
-    if (user?.email) {
-      const history = getUserHistory(user.email);
-      setUserHistory(history);
-    }
-  }, [user]);
+  // Save budget when changed
+  const handleBudgetChange = (val) => {
+    setBudget(val);
+    if (user?.email) saveUserData(user.email, { budget: val });
+  };
 
-  // Search from backend with user history priority
+  // Save city when changed
+  const handleCityChange = (val) => {
+    setCity(val);
+    if (user?.email) saveUserData(user.email, { city: val });
+  };
+
+  // Save dietary when changed
+  const handleDietaryChange = (val) => {
+    setDietary(val);
+    if (user?.email) saveUserData(user.email, { dietary: val });
+  };
+
+  // Search from backend
   useEffect(() => {
     if (newItem.length < 1) {
-      // Show user history when no search term
-      if (user?.email) {
-        const history = getUserHistory(user.email);
-        setFiltered(history.filter(s => !items.find(i => i.name === s)).slice(0, 8));
-      } else {
-        setFiltered([]);
-      }
+      const history = user?.email ? getUserHistory(user.email) : [];
+      setFiltered(history.filter(s => !items.find(i => i.name === s)).slice(0, 8));
       return;
     }
-
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:5000/api/search?q=${encodeURIComponent(newItem)}`);
+        const res = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(newItem)}`);
         const data = await res.json();
         const results = data.results.filter(s => !items.find(i => i.name === s));
-
-        // Prioritize items from user history
         const history = user?.email ? getUserHistory(user.email) : [];
         const historyMatches = history.filter(h => results.includes(h));
         const otherResults = results.filter(r => !history.includes(r));
         setFiltered([...historyMatches, ...otherResults].slice(0, 8));
       } catch {
-        const local = ALL_ITEMS.filter(s =>
+        setFiltered(ALL_ITEMS.filter(s =>
           s.toLowerCase().includes(newItem.toLowerCase()) &&
           !items.find(i => i.name === s)
-        ).slice(0, 8);
-        setFiltered(local);
+        ).slice(0, 8));
       }
     }, 200);
     return () => clearTimeout(timer);
@@ -416,13 +444,10 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
   const addItem = (name) => {
     const itemName = (name || newItem).trim();
     if (!itemName) return;
-
-    // Save to user history
     if (user?.email) {
       saveToHistory(user.email, itemName);
       setUserHistory(getUserHistory(user.email));
     }
-
     const existing = items.find(i => i.name === itemName);
     if (existing) {
       setItems(items.map(i => i.name === itemName ? { ...i, qty: i.qty + 1 } : i));
@@ -445,7 +470,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
     setLoading(true);
     try {
       const itemNames = items.flatMap(item => Array(item.qty).fill(item.name));
-      const response = await fetch('http://127.0.0.1:5000/api/optimise', {
+      const response = await fetch(`${API_URL}/api/optimise`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: itemNames, budget, dietary })
@@ -454,7 +479,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
       setOptimisationResult(result);
       setCurrentPage('results');
     } catch (error) {
-      alert('Could not connect to Flask server. Make sure it is running on port 5000!');
+      alert('Could not connect to server. Please try again!');
     } finally {
       setLoading(false);
     }
@@ -466,12 +491,12 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
     <div className="max-w-5xl mx-auto px-4 md:px-6 py-4 md:py-6">
       <div className="mb-4">
         <h2 className="text-base md:text-lg font-semibold text-gray-800">Build your grocery list</h2>
-        {user && <p className="text-xs text-gray-500 mt-1">Welcome, {user.name}! Budget: ${user.budget} · {user.city}</p>}
+        {user && <p className="text-xs text-gray-500 mt-1">{user.name} · {city} · Budget: ${budget}/week</p>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="md:col-span-2">
-          {/* Search with history */}
+          {/* Search */}
           <div className="relative mb-4">
             <div className="flex gap-2 md:gap-3">
               <input
@@ -489,9 +514,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
             {showSuggestions && filtered.length > 0 && (
               <div className="absolute z-20 w-full bg-white border border-gray-200 rounded-xl shadow-lg mt-1 overflow-hidden max-h-64 overflow-y-auto">
                 {newItem.length === 0 && userHistory.length > 0 && (
-                  <div className="px-3 py-1 text-xs text-gray-400 bg-gray-50 border-b border-gray-100">
-                    🕐 Your recent items
-                  </div>
+                  <div className="px-3 py-1 text-xs text-gray-400 bg-gray-50 border-b">🕐 Your recent items</div>
                 )}
                 {filtered.map((s, i) => {
                   const isHistory = userHistory.includes(s);
@@ -500,7 +523,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
                       className="px-4 py-2 text-sm text-gray-700 hover:bg-green-50 cursor-pointer flex items-center gap-2 border-b border-gray-100 last:border-0">
                       <span>{getIcon(s)}</span>
                       <span className="flex-1">{s}</span>
-                      {isHistory && <span className="text-xs text-green-500">Recent</span>}
+                      {isHistory && <span className="text-xs text-green-500 bg-green-50 px-1 rounded">Recent</span>}
                     </div>
                   );
                 })}
@@ -532,15 +555,28 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
             </div>
           )}
 
-          {/* Budget & City */}
+          {/* Budget & City — per user saved */}
           <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4">
             <div>
               <label className="text-xs md:text-sm font-medium text-gray-700 mb-1 block">Weekly budget ($NZD) *</label>
-              <input value={budget} onChange={e => setBudget(e.target.value)} className="w-full border border-gray-300 rounded-xl px-3 md:px-4 py-2 text-sm outline-none focus:border-green-400" />
+              <input
+                value={budget}
+                onChange={e => handleBudgetChange(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl px-3 md:px-4 py-2 text-sm outline-none focus:border-green-400"
+                placeholder="e.g. 150"
+              />
             </div>
             <div>
               <label className="text-xs md:text-sm font-medium text-gray-700 mb-1 block">Your city</label>
-              <input value={city} onChange={e => setCity(e.target.value)} className="w-full border border-gray-300 rounded-xl px-3 md:px-4 py-2 text-sm outline-none focus:border-green-400" />
+              <select
+                value={city}
+                onChange={e => handleCityChange(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl px-3 md:px-4 py-2 text-sm outline-none focus:border-green-400"
+              >
+                {['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Dunedin','Napier','Palmerston North','Nelson','Rotorua'].map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -549,7 +585,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
             <label className="text-xs md:text-sm font-medium text-gray-700 mb-2 block">Dietary preferences</label>
             <div className="flex gap-1 md:gap-2 flex-wrap">
               {['No preference', 'Vegetarian', 'Vegan', 'Gluten free', 'Dairy free', 'Halal'].map((tag) => (
-                <span key={tag} onClick={() => setDietary(tag)}
+                <span key={tag} onClick={() => handleDietaryChange(tag)}
                   className={`px-2 md:px-3 py-1 rounded-full text-xs cursor-pointer border transition-colors ${dietary === tag ? 'bg-green-50 text-green-700 border-green-300 font-medium' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
                   {tag}
                 </span>
@@ -567,13 +603,13 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
         <div className="bg-gray-50 rounded-xl p-4 h-fit">
           {user && (
             <div className="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
                   {user.name.charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <div className="text-sm font-medium text-green-800">{user.name}</div>
-                  <div className="text-xs text-green-600">{user.city} · ${user.budget}/week</div>
+                  <div className="text-xs text-green-600">{city} · ${budget}/week</div>
                 </div>
               </div>
             </div>
@@ -584,6 +620,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
             ['Items', `${items.length}`],
             ['Quantity', `${items.reduce((a, b) => a + b.qty, 0)} units`],
             ['Budget', `$${budget || '0'}`],
+            ['City', city],
             ['Dietary', dietary],
           ].map(([label, value], i) => (
             <div key={i} className="flex justify-between py-2 border-b border-gray-200 text-sm last:border-0">
@@ -611,7 +648,6 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
             ))}
           </div>
 
-          {/* User History or Quick Add */}
           <div className="mt-4">
             <div className="text-xs font-medium text-gray-700 mb-2">
               {userHistory.length > 0 ? '🕐 Your recent items:' : '⚡ Quick add:'}
@@ -636,7 +672,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
 }
 
 // ═══════════════════════════
-// RESULTS PAGE — with per-product nutrition
+// RESULTS PAGE
 // ═══════════════════════════
 function ResultsPage({ setCurrentPage, optimisationResult }) {
   const plan = optimisationResult?.optimised_plan || {};
@@ -655,14 +691,13 @@ function ResultsPage({ setCurrentPage, optimisationResult }) {
       <div className="flex justify-between items-start mb-4">
         <div>
           <h2 className="text-base md:text-lg font-semibold text-gray-800">Your optimised shopping plan</h2>
-          <p className="text-xs md:text-sm text-gray-500">ML optimisation complete · Auckland</p>
+          <p className="text-xs md:text-sm text-gray-500">ML optimisation complete</p>
         </div>
         <span className={`text-xs px-2 md:px-3 py-1 rounded-full font-medium ${withinBudget ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
           {withinBudget ? '✓ Budget met' : '⚠️ Over budget'}
         </span>
       </div>
 
-      {/* Savings Strip */}
       <div className="bg-green-50 border border-green-200 rounded-xl p-3 md:p-4 grid grid-cols-3 gap-2 mb-4">
         <div className="text-center">
           <div className="text-xs text-green-600">Total cost</div>
@@ -697,42 +732,26 @@ function ResultsPage({ setCurrentPage, optimisationResult }) {
                   <span className="font-bold text-green-700 text-sm">${storeItems.reduce((a, b) => a + b.price, 0).toFixed(2)}</span>
                 </div>
                 {storeItems.map((item, j) => (
-                  <div key={j} className="px-3 md:px-4 py-2 md:py-3 border-b border-gray-100 last:border-0 bg-white">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <div className="w-6 h-6 md:w-7 md:h-7 bg-green-50 rounded-lg flex items-center justify-center text-sm flex-shrink-0">{getIcon(item.name)}</div>
-                        <div className="min-w-0">
-                          <span className="text-xs md:text-sm text-gray-700 truncate block">{item.name}</span>
-                          {item.qty > 1 && <span className="text-xs text-gray-400">× {item.qty} (${item.unit_price?.toFixed(2)} each)</span>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                        <span className="text-sm font-medium text-green-700">${item.price.toFixed(2)}</span>
-                        {/* Per item price comparison */}
-                        {item.all_prices && (
-                          <div className="hidden md:flex gap-1">
-                            {Object.entries(item.all_prices).map(([store, price]) => (
-                              <span key={store} className={`text-xs px-1 py-0.5 rounded ${price === item.unit_price ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-                                {store.split("'")[0]}: ${price}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                  <div key={j} className="flex justify-between items-center px-3 md:px-4 py-2 md:py-3 border-b border-gray-100 last:border-0 bg-white">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className="w-6 h-6 md:w-7 md:h-7 bg-green-50 rounded-lg flex items-center justify-center text-sm flex-shrink-0">{getIcon(item.name)}</div>
+                      <div className="min-w-0">
+                        <span className="text-xs md:text-sm text-gray-700 truncate block">{item.name}</span>
+                        {item.qty > 1 && <span className="text-xs text-gray-400">× {item.qty} (${item.unit_price?.toFixed(2)} each)</span>}
                       </div>
                     </div>
+                    <span className="text-sm font-medium text-green-700 flex-shrink-0 ml-2">${item.price.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
             ))
           )}
-
           <div className="flex gap-2 md:gap-3 mt-2">
             <button onClick={() => setCurrentPage('shop')} className="flex-1 border border-green-300 text-green-700 py-2 md:py-3 rounded-xl text-xs md:text-sm font-medium">✏️ Edit list</button>
             <button onClick={() => setCurrentPage('report')} className="flex-1 bg-green-700 text-white py-2 md:py-3 rounded-xl text-xs md:text-sm font-medium">📄 Download PDF</button>
           </div>
         </div>
 
-        {/* Nutrition Sidebar */}
         <div>
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-semibold text-gray-800 text-sm">🌿 Nutrition summary</h3>
@@ -740,8 +759,6 @@ function ResultsPage({ setCurrentPage, optimisationResult }) {
               {showNutrition ? 'Hide details' : 'Per item'}
             </button>
           </div>
-
-          {/* Overall nutrition bars */}
           {[
             { label: 'Calories', value: `${Math.round(nutrition.calories)} / 2,000 kcal`, pct: (nutrition.calories / 2000) * 100 },
             { label: 'Protein', value: `${Math.round(nutrition.protein)}g / 50g`, pct: (nutrition.protein / 50) * 100 },
@@ -759,15 +776,13 @@ function ResultsPage({ setCurrentPage, optimisationResult }) {
               </div>
             </div>
           ))}
-
           <div className={`rounded-lg p-2 text-xs mt-2 ${meetsMoH ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
             {meetsMoH ? '✓ Meets MoH NZ (2020) guidelines' : '⚠️ Add more variety to meet guidelines'}
           </div>
 
-          {/* Per item nutrition breakdown */}
           {showNutrition && optimisationResult?.item_nutrition && (
             <div className="mt-4 pt-3 border-t border-gray-200">
-              <div className="text-xs font-medium text-gray-700 mb-2">Per item breakdown:</div>
+              <div className="text-xs font-medium text-gray-700 mb-2">Per item:</div>
               {Object.entries(optimisationResult.item_nutrition).map(([itemName, nutr], i) => (
                 <div key={i} className="mb-2 p-2 bg-gray-50 rounded-lg">
                   <div className="text-xs font-medium text-gray-700 truncate">{getIcon(itemName)} {itemName}</div>
@@ -818,7 +833,7 @@ function ReportPage({ setCurrentPage, optimisationResult }) {
 
   const handleDownloadPDF = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/report', {
+      const response = await fetch(`${API_URL}/api/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ optimised_plan: plan, total_cost: totalCost, savings, budget: 150, nutrition })
@@ -834,7 +849,7 @@ function ReportPage({ setCurrentPage, optimisationResult }) {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert('PDF download failed — make sure Flask is running on port 5000!');
+      alert('PDF download failed. Please try again!');
     }
   };
 
