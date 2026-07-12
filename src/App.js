@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import emailjs from '@emailjs/browser';
+
+const EMAILJS_SERVICE_ID = 'service_ab2jq8d';
+const EMAILJS_TEMPLATE_ID = 'template_djk9447';
+const EMAILJS_PUBLIC_KEY = 'UFSigQkUeu5jL599Y';
 
 const API_URL = 'https://budgetshopnz-backend-production.up.railway.app';
 
@@ -239,21 +244,47 @@ function LoginPage({ onLogin }) {
   const handleSubmit = () => {
     if (!email.trim()) { setError('Please enter your email!'); return; }
     if (isRegister && !name.trim()) { setError('Please enter your name!'); return; }
-    if (!email.includes('@')) { setError('Please enter a valid email!'); return; }
+    if (!email.includes('@') || !email.includes('.')) { 
+      setError('Please enter a valid email address!'); return; 
+    }
 
     const users = JSON.parse(localStorage.getItem('budgetshop_users') || '[]');
 
     if (isRegister) {
       const existing = users.find(u => u.email === email);
-      if (existing) { setError('Email already registered! Please login.'); return; }
+      if (existing) { 
+        setError('This email is already registered! Please login instead.'); 
+        return; 
+      }
       const newUser = { name, email, joinDate: new Date().toLocaleDateString('en-NZ') };
       users.push(newUser);
       localStorage.setItem('budgetshop_users', JSON.stringify(users));
       saveUserData(email, { city, budget, dietary: 'No preference' });
+
+      // Send welcome email
+      emailjs.send(
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        {
+          to_name: name,
+          to_email: email,
+          city: city,
+          budget: budget,
+        },
+        EMAILJS_PUBLIC_KEY
+      ).then(() => {
+        console.log('Welcome email sent to:', email);
+      }).catch((err) => {
+        console.log('Email error:', err);
+      });
+
       onLogin(newUser, true);
     } else {
       const foundUser = users.find(u => u.email === email);
-      if (!foundUser) { setError('Email not found! Please register first.'); return; }
+      if (!foundUser) { 
+        setError('Email not found! Please register first.'); 
+        return; 
+      }
       onLogin(foundUser, false);
     }
   };
