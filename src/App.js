@@ -721,7 +721,7 @@ function ShopPage({ setCurrentPage, setOptimisationResult, user }) {
 // RESULTS PAGE
 // ═══════════════════════════
 function ResultsPage({ setCurrentPage, optimisationResult, user }) {
-  const plan = optimisationResult?.optimised_plan || {};
+  const nutritionGuidelines = optimisationResult?.nutrition_guidelines || { calories: 14000, protein: 350, carbs: 1750, fat: 490, fibre: 175 };const plan = optimisationResult?.optimised_plan || {};
   const totalCost = optimisationResult?.total_cost || 0;
   const savings = optimisationResult?.savings || 0;
   const withinBudget = optimisationResult?.within_budget ?? true;
@@ -807,11 +807,11 @@ function ResultsPage({ setCurrentPage, optimisationResult, user }) {
             </button>
           </div>
           {[
-            { label: 'Calories', value: `${Math.round(nutrition.calories)} / 2,000 kcal`, pct: (nutrition.calories / 2000) * 100 },
-            { label: 'Protein', value: `${Math.round(nutrition.protein)}g / 50g`, pct: (nutrition.protein / 50) * 100 },
-            { label: 'Carbs', value: `${Math.round(nutrition.carbs)}g / 250g`, pct: (nutrition.carbs / 250) * 100 },
-            { label: 'Fibre', value: `${Math.round(nutrition.fibre)}g / 25g`, pct: (nutrition.fibre / 25) * 100 },
-            { label: 'Fat', value: `${Math.round(nutrition.fat)}g / 70g`, pct: (nutrition.fat / 70) * 100 },
+            { label: 'Calories', value: `${Math.round(nutrition.calories)} / ${nutritionGuidelines.calories} kcal`, pct: (nutrition.calories / nutritionGuidelines.calories) * 100 },
+            { label: 'Protein', value: `${Math.round(nutrition.protein)}g / ${nutritionGuidelines.protein}g`, pct: (nutrition.protein / nutritionGuidelines.protein) * 100 },
+            { label: 'Carbs', value: `${Math.round(nutrition.carbs)}g / ${nutritionGuidelines.carbs}g`, pct: (nutrition.carbs / nutritionGuidelines.carbs) * 100 },
+            { label: 'Fibre', value: `${Math.round(nutrition.fibre)}g / ${nutritionGuidelines.fibre}g`, pct: (nutrition.fibre / nutritionGuidelines.fibre) * 100 },
+            { label: 'Fat', value: `${Math.round(nutrition.fat)}g / ${nutritionGuidelines.fat}g`, pct: (nutrition.fat / nutritionGuidelines.fat) * 100 },
           ].map((n, i) => (
             <div key={i} className="mb-2 md:mb-3">
               <div className="flex justify-between text-xs mb-1">
