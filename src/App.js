@@ -728,6 +728,7 @@ function ResultsPage({ setCurrentPage, optimisationResult, user }) {
   const budgetRemaining = optimisationResult?.budget_remaining || 0;
   const nutrition = optimisationResult?.nutrition || { calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 };
   const meetsMoH = optimisationResult?.meets_moh_nz_2020 ?? true;
+  const singleStoreTotals = optimisationResult?.single_store_totals || {}; // NEW — real per-store totals from backend
   const [showNutrition, setShowNutrition] = useState(false);
 
   const storeColors = { "Pak'nSave": "bg-green-600", "New World": "bg-orange-500", "Woolworths": "bg-blue-600" };
@@ -844,14 +845,10 @@ function ResultsPage({ setCurrentPage, optimisationResult, user }) {
 
           <div className="mt-4 pt-3 border-t border-gray-200">
             <div className="text-xs font-medium text-gray-700 mb-2">Single store comparison:</div>
-            {[
-              { store: "Pak'nSave only", price: totalCost + savings + 1.55 },
-              { store: "New World only", price: totalCost + savings + 4.99 },
-              { store: "Woolworths only", price: totalCost + savings + 3.45 },
-            ].map((s, i) => (
+            {Object.entries(singleStoreTotals).map(([store, price], i) => (
               <div key={i} className="flex justify-between text-xs py-1">
-                <span className="text-gray-500">{s.store}</span>
-                <span className="font-medium text-gray-700">${s.price.toFixed(2)}</span>
+                <span className="text-gray-500">{store} only</span>
+                <span className="font-medium text-gray-700">${price.toFixed(2)}</span>
               </div>
             ))}
             <div className="border-t border-gray-200 mt-2 pt-2 flex justify-between text-xs">
@@ -873,6 +870,7 @@ function ReportPage({ setCurrentPage, optimisationResult }) {
   const savings = optimisationResult?.savings || 0;
   const plan = optimisationResult?.optimised_plan || {};
   const nutrition = optimisationResult?.nutrition || { calories: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 };
+  const budget = optimisationResult?.budget || 150; // NEW — use the real budget, not a hardcoded 150
 
   const storeTextColors = { "Pak'nSave": "text-green-800", "New World": "text-orange-700", "Woolworths": "text-blue-700" };
   const dotColors = { "Pak'nSave": "bg-green-600", "New World": "bg-orange-500", "Woolworths": "bg-blue-600" };
@@ -882,7 +880,7 @@ function ReportPage({ setCurrentPage, optimisationResult }) {
       const response = await fetch(`${API_URL}/api/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ optimised_plan: plan, total_cost: totalCost, savings, budget: 150, nutrition })
+        body: JSON.stringify({ optimised_plan: plan, total_cost: totalCost, savings, budget: budget, nutrition })
       });
       if (!response.ok) throw new Error('Server error');
       const blob = await response.blob();
@@ -985,7 +983,7 @@ function ReportPage({ setCurrentPage, optimisationResult }) {
 }
 
 // ═══════════════════════════
-// PROFILE PAGE — NEW!
+// PROFILE PAGE
 // ═══════════════════════════
 function ProfilePage({ setCurrentPage, user, setUser }) {
   const userData = getUserData(user.email);
@@ -1085,7 +1083,7 @@ function ProfilePage({ setCurrentPage, user, setUser }) {
 }
 
 // ═══════════════════════════
-// HISTORY PAGE — NEW!
+// HISTORY PAGE
 // ═══════════════════════════
 function HistoryPage({ setCurrentPage, user, setOptimisationResult }) {
   const plans = user ? getSavedPlans(user.email) : [];
